@@ -10,15 +10,20 @@ TCP_FRAME_NAME = "TCP"
 # TCP相对Empty_link6的平移向量
 TCP_TRANSLATION = np.array([0, 0, 0.15], dtype = float)
 
-# TCP相对Empty_link6的RPY
-TCP_RPY = np.array([0, 0, 0], dtype = float)
+# TCP相对Empty_link6的Rotation  使得夹爪水平时 TCP坐标系姿态与基坐标系姿态相同
+TCP_ROTATION = np.array([
+    [ 0.014486555, -0.765812320,  0.642900949],
+    [-0.017242311, -0.643064142, -0.765618190],
+    [ 0.999746389,  0.000006072, -0.022520159],
+], dtype=float)
+
 
 
 # 构造Empty_link6到TCP的变换
 # Empty_link6 -> TCP
 def build_tcp_transform():
     # 计算旋转矩阵
-    R_e_tcp = pin.rpy.rpyToMatrix(TCP_RPY)
+    R_e_tcp = TCP_ROTATION
     # 构造齐次变换矩阵
     M_e_tcp = pin.SE3(R_e_tcp, TCP_TRANSLATION)
     return M_e_tcp

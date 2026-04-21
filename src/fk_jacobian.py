@@ -1,3 +1,15 @@
+'''
+本文件通过调用pinocchio官方api实现：
+    1.FK计算
+    2.雅可比矩阵计算
+    3.数值微分计算雅可比 用于验证雅可比计算正确性
+    4.从6d雅可比提取线速度雅可比矩阵
+
+主要用于验证控制算法 后续使用手动实现的FK和Jacobian进行替换 来实现MCU运行部署
+
+'''
+
+
 import numpy as np
 import pinocchio as pin
 
