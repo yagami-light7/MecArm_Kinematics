@@ -29,8 +29,17 @@ from robot_loader import load_robot, build_q, EE_FRAME_NAME
 from fk_jacobian import forward_kinematics, frame_jacobian
 from tcp_frame import TCP_FRAME_NAME, extract_tcp_pose, tcp_jacobian_from_ee_jacobian
 from pose_error import pos_error_6d
-from task6d_controller import step_pose_6d_control
-from task6d_controller import task_twist_from_pose_error, solve_dls_6d, clip_qdot
+from task6d_controller import (
+    task_twist_from_pose_error,
+    solve_dls_6d,
+    clip_qdot,
+    solve_weighted_dls_6d,
+    dls_inverse_6d,
+    wdls_inverse_6d,
+    nullspace_projector_6d,
+    joint_center_secondary_velocity,
+)
+
 
 from datetime import datetime
 import csv
@@ -56,6 +65,76 @@ SETTLE_TIME = 0.5       # 到达终点后的收敛保持时间，单位 s
 MAX_STEPS = int((MOVE_TIME + SETTLE_TIME) / DT) # 最大步数
 POS_ERROR_TOL = 1e-4    # 位置误差容限
 ROT_ERROR_TOL = 1e-3    # 姿态误差容限
+
+''' Weighted-DLS 参数 '''
+# USE_WEIGHTED_DLS = False
+# TASK_Wx = np.array([1.0, 1.0], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 1.0], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+
+USE_WEIGHTED_DLS = True
+TASK_Wx = np.array([4.0, 1.0], dtype=float)
+TASK_Wq = np.ones(6, dtype=float)
+
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 4.0], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 1.0], dtype=float)
+# TASK_Wq = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=float)
+
+'''Null Space 参数'''
+CASE_NAME = "baseline"
+CHAR_LENGTH = 0.2   # 姿态速度折算尺度，用于平衡 6D Jacobian 的线速度/角速度量纲
+Q_HOME = INITIAL_THETA.copy()   # 将初始角度作为舒适构型 MCU部署上替换为Home-Position
+
+# Case 1: 严格 6D baseline
+# CASE_NAME = "01_baseline_strict_6d"
+# DAMPING = 0.05
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 1.0], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+# USE_NULLSPACE = False
+# NULLSPACE_GAIN = 0.0
+# Q_HOME = INITIAL_THETA.copy()
+
+
+# Case 2: 严格 6D + 温和零空间
+CASE_NAME = "02_nullspace_strict_6d"
+DAMPING = 0.05
+USE_WEIGHTED_DLS = True
+TASK_Wx = np.array([1.0, 1.0], dtype=float)
+TASK_Wq = np.ones(6, dtype=float)
+USE_NULLSPACE = True
+NULLSPACE_GAIN = 0.08
+Q_HOME = np.array([0.0, -0.8, 0.9, 0.0, 1.6, 0.0], dtype=float)
+
+
+# # # Case 3: 增大阻尼，让软零空间更明显
+# CASE_NAME = "03_nullspace_soft_dls"
+# DAMPING = 0.10
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 1.0], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+# USE_NULLSPACE = True
+# NULLSPACE_GAIN = 0.12
+# Q_HOME = np.array([0.0, -0.8, 0.9, 0.0, 1.6, 0.0], dtype=float)
+
+
+# # 位置优先，释放一部分姿态约束给零空间
+# CASE_NAME = "04_nullspace_position_priority"
+# DAMPING = 0.10
+# USE_WEIGHTED_DLS = True
+# TASK_Wx = np.array([1.0, 0.3], dtype=float)
+# TASK_Wq = np.ones(6, dtype=float)
+# USE_NULLSPACE = True
+# NULLSPACE_GAIN = 0.15
+# Q_HOME = np.array([0.0, -0.8, 0.9, 0.0, 1.6, 0.0], dtype=float)
+
 
 
 # 关节空间限幅
@@ -112,10 +191,86 @@ def cartesian_pose_reference(t, p_start, p_goal, R_start, R_goal,total_time):
     
     R_ref = R_start @ pin.exp3(s * rotvec_local_total)# 指数映射生成基坐标系下的参考姿态
 
-    w_ff_local = s_dot * rotvec_local_total# 前馈角速度：先得到局部角速度，再转到基坐标系下表达
+    w_ff_local = s_dot * rotvec_local_total# 前馈角速度：利用SO3旋转量得到局部角速度，再转到基坐标系下表达
+    
     w_ff = R_ref @ w_ff_local   # 笛卡尔空间参考轨迹角速度 即 前馈角速度
 
     return p_ref, R_ref, v_ff, w_ff
+
+# 轨迹评估：计算当前TCP位置距离轨迹的直线距离 以及 相位滞后/超前
+def line_tracking_metrics(p_cur, p_ref, p_start, p_goal):
+    p_cur = np.asarray(p_cur, dtype=float).reshape(3)
+    p_ref = np.asarray(p_ref, dtype=float).reshape(3)
+    p_start = np.asarray(p_start, dtype=float).reshape(3)
+    p_goal = np.asarray(p_goal, dtype=float).reshape(3)
+
+    # 构造轨迹方向并计算长度
+    d = p_goal - p_start
+    length = np.linalg.norm(d)
+
+    # 后续计算投影之前 先进行一次判断
+    if length < 1e-12:
+        return 0.0, 0.0
+
+    # 计算轨迹方向单位向量
+    u = d / length
+
+    # 计算实际轨迹投影长度和参考轨迹投影长度
+    cur_along = np.dot(p_cur - p_start, u)  # 内积计算投影长度
+    ref_along = np.dot(p_ref - p_start, u)
+
+    # 计算实际轨迹投影向量
+    p_on_line = p_start + cur_along * u
+
+    # 计算实际轨迹与参考轨迹（直线）的垂直距离
+    line_dev = np.linalg.norm(p_cur - p_on_line)
+
+    # 计算实际轨迹与参考轨迹相位差 >0 超前 <0 滞后
+    phase_error = cur_along - ref_along
+
+    return line_dev, phase_error
+
+# 机械臂奇异评估：折算姿态尺度之后，使用SVD进行最值、条件数计算
+def jacobian_quality_metrics(J_tcp, char_length=0.2):
+    S = np.diag([1.0, 1.0, 1.0, char_length, char_length, char_length])
+    J_eval = S @ J_tcp
+
+    singular_values = np.linalg.svd(J_eval, compute_uv=False)
+    sigma_min = singular_values[-1]
+
+    if sigma_min < 1e-9:
+        condition_number = np.inf
+    else:
+        condition_number = singular_values[0] / sigma_min
+
+    return sigma_min, condition_number
+
+# 关节极限评估：计算关节中心代价和关节极限余量
+def joint_limit_metrics(q, q_min, q_max):
+    q = np.asarray(q, dtype=float).reshape(6)
+    q_min = np.asarray(q_min, dtype=float).reshape(6)
+    q_max = np.asarray(q_max, dtype=float).reshape(6)
+
+    # 关节可运动范围
+    q_range = q_max - q_min
+    q_range = np.maximum(q_range, 1e-6)
+
+    # 关节中心点 和 可运动半程
+    q_mid = 0.5 * (q_min + q_max)
+    q_half_range = 0.5 * q_range
+    q_norm = (q - q_mid) / q_half_range
+
+    # 关节中心代价
+    joint_center_cost = 0.5 * np.sum(q_norm ** 2)   # 采用二次型写法  越大越偏离中心 距离关节限位越近
+                                                    # 越小越安全
+    # 计算上限下限余量
+    lower_margin = (q - q_min) / q_range
+    upper_margin = (q_max - q) / q_range
+
+    # 关节极限余量
+    joint_margin_min = np.min(np.minimum(lower_margin, upper_margin)) #关节极限余量 = 上限或下限余量最低的那个关节电机的较小余量
+                                                                    # 越大越安全  
+    return joint_center_cost, joint_margin_min
 
 
 def create_result_dir():
@@ -131,6 +286,10 @@ def save_trajectory_csv(result_dir, records):
     fieldnames = [
         "step", "time",
         "pos_err_norm", "rot_err_norm", "err_6d_norm", "qdot_max",
+        "line_dev", "phase_error",
+        "sigma_min", "condition_number",
+        "joint_center_cost", "joint_margin_min",
+        "qdot_norm",
         "px", "py", "pz",
         "roll", "pitch", "yaw",
         "r11", "r12", "r13",
@@ -139,6 +298,14 @@ def save_trajectory_csv(result_dir, records):
         "epx", "epy", "epz", "erx", "ery", "erz",
         "q1", "q2", "q3", "q4", "q5", "q6",
         "qdot1", "qdot2", "qdot3", "qdot4", "qdot5", "qdot6",
+        "qdot_null1", "qdot_null2", "qdot_null3",
+        "qdot_null4", "qdot_null5", "qdot_null6",
+        "qdot_primary_norm",
+        "qdot_null_norm",
+        "qdot_null_ratio",
+        "null_task_leak_norm",
+
+
     ]
 
     with csv_path.open("w", newline="", encoding="utf-8") as f:
@@ -401,7 +568,7 @@ def save_tcp_trajectory_3d_svg(result_dir, records, p_start, p_des, p_final):
 
 
 
-
+# 主程序：控制律实现
 def main():
     np.set_printoptions(precision=6, suppress=True)
     result_dir = create_result_dir()
@@ -410,6 +577,13 @@ def main():
 
     model, data, frame_id = load_robot()
     q = build_q(model, INITIAL_THETA)
+
+    # 求关节限位
+    q_min = np.asarray(model.lowerPositionLimit[:6], dtype=float)
+    q_max = np.asarray(model.upperPositionLimit[:6], dtype=float)
+
+    q_min = np.where(np.isfinite(q_min), q_min, -np.pi)
+    q_max = np.where(np.isfinite(q_max), q_max, np.pi)
 
     # 计算TCP位姿
     p_start, R_start, J_tcp = compute_tcp_state(model, data, frame_id, q)
@@ -463,10 +637,6 @@ def main():
         # 生成笛卡尔轨迹（包括参考位置和前馈速度）
         p_ref, R_ref, v_ff, w_ff = cartesian_pose_reference(t, p_start, p_des, R_start, R_des, MOVE_TIME)
 
-        # 当前阶段先保持目标姿态不变，所以角速度前馈为 0
-        R_ref = R_des
-        w_ff = np.zeros(3, dtype=float)
-
         # 计算误差
         e_6d = pos_error_6d(p_ref, p_cur, R_ref, R_cur)
 
@@ -475,8 +645,37 @@ def main():
         twist_ff = np.hstack([v_ff, w_ff])
         twist_target = twist_ff + twist_fb
 
-        # DLS求解期望qdot
-        qdot_target = solve_dls_6d(J_tcp, twist_target, damping=DAMPING)
+        # WDLS求解期望qdot
+        if USE_WEIGHTED_DLS:
+            J_dls_inv = wdls_inverse_6d(J_tcp, DAMPING, TASK_Wx, TASK_Wq)
+            # qdot_target = solve_weighted_dls_6d(J_tcp, twist_target, damping=DAMPING, Wx=TASK_Wx, Wq=TASK_Wq)
+        else :
+            J_dls_inv = dls_inverse_6d(J_tcp, DAMPING)
+            
+            # qdot_target = solve_dls_6d(J_tcp, twist_target, damping=DAMPING)
+        qdot_primary = J_dls_inv @ twist_target # 主任务关节速度
+
+        # NullSpace优化 添加副任务速度
+        if USE_NULLSPACE:
+            N = nullspace_projector_6d(J_tcp, J_dls_inv)
+
+            qdot_secondary = joint_center_secondary_velocity(
+            q=q,
+            q_home=Q_HOME,
+            q_min=q_min,
+            q_max=q_max,
+            gain=NULLSPACE_GAIN)
+
+            qdot_null = N @ qdot_secondary # J @ N = J @ (I - J#J) ≈ 0
+            
+        else:
+            qdot_null = np.zeros(6, dtype=float)
+            
+        '''
+        期望关节速度 = 主任务关节速度（基于WDLS由期望twist得到）+
+        副任务关节速度（基于副任务代价函数并投影至TCP雅可比矩阵零空间得到）'''
+        qdot_target = qdot_primary + qdot_null # 主任务最优化 + 主任务优先级约束下的次任务优化
+
 
         # 关节速度限幅
         qdot_target = clip_qdot(qdot_target, QDOT_LIMIT)
@@ -494,6 +693,32 @@ def main():
         err_6d_norm = np.linalg.norm(e_6d)
         qdot_abs_max = np.max(np.abs(qdot_target))
 
+        line_dev, phase_error = line_tracking_metrics(
+            p_cur=p_cur,
+            p_ref=p_ref,
+            p_start=p_start,
+            p_goal=p_des,
+        )
+
+        sigma_min, condition_number = jacobian_quality_metrics(
+            J_tcp,
+            char_length=CHAR_LENGTH,
+        )
+
+        joint_center_cost, joint_margin_min = joint_limit_metrics(
+            q=q,
+            q_min=q_min,
+            q_max=q_max,
+        )
+
+        qdot_norm = np.linalg.norm(qdot_target)
+        qdot_primary_norm = np.linalg.norm(qdot_primary)
+        qdot_null_norm = np.linalg.norm(qdot_null)
+        qdot_null_ratio = qdot_null_norm / (qdot_primary_norm + 1e-12)
+
+        # 理想情况下 J_tcp @ qdot_null 应接近 0；越小说明零空间投影越干净
+        null_task_leak_norm = np.linalg.norm(J_tcp @ qdot_null)
+
         rpy_cur = pin.rpy.matrixToRpy(R_cur)
 
         records.append({
@@ -503,6 +728,14 @@ def main():
             "rot_err_norm": float(rot_err_norm),
             "err_6d_norm": float(err_6d_norm),
             "qdot_max": float(qdot_abs_max),
+            
+            "line_dev": float(line_dev),
+            "phase_error": float(phase_error),
+            "sigma_min": float(sigma_min),
+            "condition_number": float(condition_number),
+            "joint_center_cost": float(joint_center_cost),
+            "joint_margin_min": float(joint_margin_min),
+            "qdot_norm": float(qdot_norm),
 
             "px": float(p_cur[0]),
             "py": float(p_cur[1]),
@@ -542,6 +775,18 @@ def main():
             "qdot4": float(qdot_target[3]),
             "qdot5": float(qdot_target[4]),
             "qdot6": float(qdot_target[5]),
+
+            "qdot_null1": float(qdot_null[0]),
+            "qdot_null2": float(qdot_null[1]),
+            "qdot_null3": float(qdot_null[2]),
+            "qdot_null4": float(qdot_null[3]),
+            "qdot_null5": float(qdot_null[4]),
+            "qdot_null6": float(qdot_null[5]),
+
+            "qdot_primary_norm": float(qdot_primary_norm),
+            "qdot_null_norm": float(qdot_null_norm),
+            "qdot_null_ratio": float(qdot_null_ratio),
+            "null_task_leak_norm": float(null_task_leak_norm),
         })
 
         if step % 20 == 0 or step == MAX_STEPS - 1:
@@ -556,7 +801,7 @@ def main():
 
         # 退出判断
         if t >= MOVE_TIME and pos_err_norm < POS_ERROR_TOL and rot_err_norm < ROT_ERROR_TOL:
-            print("TCP 6D pose control converged.")
+            print("TCP 6D pose control final rot err normconverged.")
             break
 
     # 迭代结束后重新计算最终 TCP 位姿
@@ -564,6 +809,13 @@ def main():
     e_final = pos_error_6d(p_des, p_final, R_des, R_final)
 
     print("\n===== 迭代结果 =====")
+    print("CASE_NAME =", CASE_NAME)
+    print("USE_WEIGHTED_DLS =", USE_WEIGHTED_DLS)
+    print("TASK_Wx =", TASK_Wx)
+    print("TASK_Wq =", TASK_Wq)
+    print("USE_NULLSPACE =", USE_NULLSPACE)
+    print("NULLSPACE_GAIN =", NULLSPACE_GAIN)
+    print("Q_HOME =", Q_HOME)
     print("final q =")
     print(q)
     print("p_final =")
@@ -576,6 +828,24 @@ def main():
     print(e_final[3:6])
     print("final pos err norm =", np.linalg.norm(e_final[0:3]))
     print("final rot err norm =", np.linalg.norm(e_final[3:6]))
+
+    if records:
+        qdot_null_norm_arr = np.array([r["qdot_null_norm"] for r in records], dtype=float)
+        qdot_null_ratio_arr = np.array([r["qdot_null_ratio"] for r in records], dtype=float)
+        null_task_leak_arr = np.array([r["null_task_leak_norm"] for r in records], dtype=float)
+        line_dev_arr = np.array([r["line_dev"] for r in records], dtype=float)
+        joint_center_cost_arr = np.array([r["joint_center_cost"] for r in records], dtype=float)
+        joint_margin_min_arr = np.array([r["joint_margin_min"] for r in records], dtype=float)
+
+        print("qdot_null_norm max =", np.max(qdot_null_norm_arr))
+        print("qdot_null_norm mean =", np.mean(qdot_null_norm_arr))
+        print("qdot_null_ratio max =", np.max(qdot_null_ratio_arr))
+        print("null_task_leak_norm max =", np.max(null_task_leak_arr))
+        print("line_dev max =", np.max(line_dev_arr))
+        print("joint_center_cost start =", joint_center_cost_arr[0])
+        print("joint_center_cost final =", joint_center_cost_arr[-1])
+        print("joint_margin_min min =", np.min(joint_margin_min_arr))
+
 
     trajectory_csv_path = save_trajectory_csv(result_dir, records)
     joint_position_svg_path = save_joint_position_svg(result_dir, records)
