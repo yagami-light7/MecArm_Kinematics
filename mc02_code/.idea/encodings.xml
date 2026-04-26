@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/User/algorithm/user_lib.c" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/User/algorithm/user_lib.h" charset="GBK" />
+    <file url="file://$PROJECT_DIR$/User/application/CAN_receive.c" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/User/controller/pid.c" charset="GBK" />
+    <file url="mock:///kalman_filter.h" charset="UTF-8" />
+  </component>
+</project>

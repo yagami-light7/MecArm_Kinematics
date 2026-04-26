@@ -1,0 +1,151 @@
+<mxfile host="drawio-plugin" modified="2026-04-13T08:44:00.762Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" version="22.1.22" etag="AOmNkSXnohe6ogR0fRyF" type="embed">
+  <diagram id="dr16-mecarm-arch" name="DR16_MecArm_Architecture">
+    <mxGraphModel dx="1241" dy="912" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="mec_arm 当前代码结构 / 层级逻辑 / 主要函数跳转" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=22;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="620" y="20" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="lane0" value="RTOS / 启动层" style="swimlane;html=1;rounded=0;horizontal=0;startSize=28;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="20" y="90" width="300" height="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="lane1" value="0-APL Application Layer" style="swimlane;html=1;rounded=0;horizontal=0;startSize=28;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="340" y="90" width="520" height="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="lane2" value="2-HDL Hardware Driver Layer" style="swimlane;html=1;rounded=0;horizontal=0;startSize=28;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="880" y="90" width="540" height="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="lane3" value="3-HAL Hardware Abstract Layer" style="swimlane;html=1;rounded=0;horizontal=0;startSize=28;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1440" y="90" width="360" height="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="lane4" value="兼容层 / 辅助说明" style="swimlane;html=1;rounded=0;horizontal=0;startSize=28;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1820" y="90" width="340" height="1180" as="geometry" />
+        </mxCell>
+        <mxCell id="n101" value="MX_FREERTOS_Init()&#xa;1. FDCAN_Filter_Init()&#xa;2. xTaskCreate(_Thread_MecArm_)&#xa;3. xTaskCreate(_Thread_RC_Hub_)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="55" y="145" width="230" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n102" value="_Thread_RC_Hub_()&#xa;RC_Hub.Init(&amp;DR16_Module, &amp;UART5_Manage_Object,&#xa;&amp;VT_Module, &amp;UART7_Manage_Object)&#xa;while(1) -&gt; Data_Analysis()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="55" y="340" width="230" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n103" value="_Thread_MecArm_()&#xa;Init()&#xa;UpdateFeedback()&#xa;ModeTransit()&#xa;SendCommand()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="55" y="560" width="230" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n201" value="CallBack_USART.cpp&#xa;HAL_UARTEx_RxEventCallback()&#xa;UART5 -&gt; DR16_Module.DR16_Data_Processing()&#xa;UART7 -&gt; VT_Module.VT_Data_Processing()&#xa;USART10 -&gt; weak stub / 外部强定义覆盖" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="385" y="145" width="430" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="n202" value="CallBack_FDCAN.cpp&#xa;HAL_FDCAN_RxFifo0/1Callback()&#xa;while(FIFO有数据) -&gt; Motor_Rx.DispatchRx()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="385" y="330" width="430" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n203" value="APL_RC_Hub.cpp / Class_RC_Hub&#xa;Data_Analysis()&#xa;1. 从DR16原始队列取18字节&#xa;2. sbus_to_rc() 解析为 dr16_control&#xa;3. 从VT队列取 custom / remote / vt_rc&#xa;4. detect_hook()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="385" y="515" width="430" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="n204" value="APL_MecArm.cpp / Class_MecArm&#xa;持有对 RC_Hub.dr16_control / remote_control / vt_rc_control 的引用&#xa;Init() 绑定电机总线&#xa;UpdateFeedback() 读电机对象状态&#xa;ModeTransit() / SendCommand() 后续直接读RC_Hub数据" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="385" y="760" width="430" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="n205" value="RC_Hub 数据中心&#xa;dr16_control&#xa;custom_control&#xa;remote_control&#xa;vt_rc_control" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="495" y="965" width="210" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="n301" value="HDL_DR16.cpp / Class_DR16&#xa;Init()&#xa;DR16_Data_Processing()&#xa;1. 仅处理 IDLE 事件&#xa;2. 从当前DMA缓冲区取原始18字节&#xa;3. xQueueSendFromISR()&#xa;4. RestartReceive()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="925" y="145" width="450" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="n302" value="HDL_VT.cpp / Class_Video_Transmission&#xa;VT_Data_Processing()&#xa;中断中只拆帧并把原始载荷写入多个队列" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="925" y="355" width="450" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n303" value="HDL_Motor_Rx.cpp + HDL_Motor_Bus.cpp&#xa;先判断这是 CAN1 / CAN2 / CAN3 哪条物理总线&#xa;再遍历该总线上注册的设备对象&#xa;逐个调用 ParseFeedback() 判断“这帧是不是你的”" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="925" y="540" width="450" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="n304" value="HDL_DJI_Motor / HDL_RS_Motor / HDL_Damiao_Motor&#xa;反馈解析写入对象状态&#xa;APL_MecArm 在周期线程里读取状态&#xa;并调用 SendMITCommand() / SetCurrentCommand()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="925" y="775" width="450" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="n305" value="DR16 原始帧队列&#xa;Queue item = 18 bytes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1045" y="315" width="210" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n306" value="VT 多路队列&#xa;xcustom_queue&#xa;xremote_queue&#xa;xrc_vt_queue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1045" y="470" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n401" value="HAL_USART.h / HAL_USART.cpp&#xa;UART_Init()&#xa;UART_Init_Double_Buffer()&#xa;UART_Start_Idle_Double_Buffer()&#xa;UART_Send_Data()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+          <mxGeometry x="1495" y="170" width="250" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="n402" value="HAL_FDCAN.h / HAL_FDCAN.cpp&#xa;FDCAN_Filter_Init()&#xa;FDCAN_Send_Data()&#xa;FDCAN_Init()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+          <mxGeometry x="1495" y="585" width="250" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n501" value="Dev_Remote_Control.cpp&#xa;兼容层包装&#xa;保留旧接口名：&#xa;Remote_Control_Init()&#xa;Get_Remote_Control_Point()&#xa;UART5_ISR_Handler() / UART5_Error_Handler()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+          <mxGeometry x="1865" y="170" width="250" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="n502" value="STM32H723XG_FLASH.ld&#xa;新增 .RAM_D1 段&#xa;DR16 双DMA缓冲区放在 RAM_D1&#xa;避免落入默认 DTCM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+          <mxGeometry x="1865" y="385" width="250" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="n503" value="CMakeLists.txt&#xa;编入：&#xa;CallBack_USART.cpp&#xa;HDL_DR16.cpp&#xa;HAL_USART.cpp&#xa;APL_RC_Hub.cpp 等" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+          <mxGeometry x="1865" y="560" width="250" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="n504" value="函数跳转要点&#xa;1. 串口中断只分发，不解析DR16&#xa;2. DR16解析在 RC_Hub 线程完成&#xa;3. 电机中断只分发，不做应用决策&#xa;4. MecArm 线程集中读取状态并下发命令" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+          <mxGeometry x="1865" y="770" width="250" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="endArrow=block;html=1;rounded=0;strokeColor=#d6b656;" parent="1" source="n101" target="n102" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="endArrow=block;html=1;rounded=0;strokeColor=#d6b656;" parent="1" source="n101" target="n103" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n201" target="n301" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n201" target="n302" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n202" target="n303" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n301" target="n305" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n302" target="n306" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n305" target="n203" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n306" target="n203" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n203" target="n205" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n205" target="n204" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n303" target="n304" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="endArrow=block;html=1;rounded=0;strokeColor=#6c8ebf;" parent="1" source="n204" target="n304" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="endArrow=block;html=1;rounded=0;strokeColor=#82b366;" parent="1" source="n304" target="n402" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="endArrow=block;html=1;rounded=0;strokeColor=#b85450;" parent="1" source="n401" target="n301" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" style="endArrow=block;html=1;rounded=0;strokeColor=#d6b656;" parent="1" source="n101" target="n402" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" style="endArrow=block;html=1;rounded=0;strokeColor=#9673a6;" parent="1" source="n501" target="n301" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" style="endArrow=block;html=1;rounded=0;strokeColor=#9673a6;" parent="1" source="n501" target="n205" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" style="endArrow=block;html=1;rounded=0;strokeColor=#9673a6;" parent="1" source="n502" target="n301" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" style="endArrow=block;html=1;rounded=0;strokeColor=#9673a6;" parent="1" source="n503" target="n201" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e21" style="endArrow=block;html=1;rounded=0;strokeColor=#9673a6;" parent="1" source="n503" target="n301" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WaveformPlotterConfig">
+    <option name="trackedVariables">
+      <list>
+        <option value="MecArm.joint[1].torque" />
+        <option value="MecArm.joint[2].torque" />
+      </list>
+    </option>
+    <option name="variableNames">
+      <list>
+        <option value="MecArm.joint[1].torque" />
+        <option value="MecArm.joint[2].torque" />
+      </list>
+    </option>
+  </component>
+</project>

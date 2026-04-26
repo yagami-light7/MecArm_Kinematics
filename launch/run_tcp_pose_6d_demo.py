@@ -638,7 +638,7 @@ def main():
         p_ref, R_ref, v_ff, w_ff = cartesian_pose_reference(t, p_start, p_des, R_start, R_des, MOVE_TIME)
 
         # 计算误差
-        e_6d = pos_error_6d(p_ref, p_cur, R_ref, R_cur)
+        e_6d = pos_error_6d(p_ref, p_cur, R_ref, R_cur) # 这里姿态误差的计算有些重复 MCU侧部署时优化
 
         # 计算后馈twist+前馈twist 生成期望twist
         twist_fb = task_twist_from_pose_error(e_6d, KP_POS, KP_ROT)
