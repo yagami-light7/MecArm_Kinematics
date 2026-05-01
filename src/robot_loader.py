@@ -3,7 +3,7 @@ import numpy as np
 import pinocchio as pin
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-URDF_PATH = PROJECT_ROOT.parent / "mec_arm_model" / "urdf" / "mec_arm.urdf"
+URDF_PATH = PROJECT_ROOT / "mec_arm_model" / "urdf" / "mec_arm.urdf"
 EE_FRAME_NAME = "Empty_Link6"
 
 def load_robot():
@@ -27,4 +27,3 @@ def build_q(model, theta):
     q[:model.nq] = theta
     
     return q
-

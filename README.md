@@ -38,7 +38,7 @@ kinematics/
         └── 1-MWL/MWL_Matrix/     # MCU 端矩阵/LDLT 求解工具
 ```
 
-URDF 模型位于项目上一级的 `mec_arm_model/urdf/mec_arm.urdf`，Python 侧通过 `src/robot_loader.py` 自动加载。
+URDF 模型位于项目内的 `mec_arm_model/urdf/mec_arm.urdf`，Python 侧通过 `src/robot_loader.py` 自动加载。
 
 ## 控制链路
 
